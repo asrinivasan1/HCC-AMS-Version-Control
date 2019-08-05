@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dataTemplate name="HCCTIMECARDREPORT" description="HCC Resourcewise Timeentry Details for Manager Report" version="1.0">
+ <properties>  
+  </properties>
+<parameters>
+<parameter name="P_EMPLOYEE_NAME" dataType="number"/>
+<parameter name="P_EMPLOYEE_NUM" dataType="number"/>
+<parameter name="P_STATUS" dataType="varchar2"/>
+<parameter name="P_START_TIME" dataType="varchar2"/>
+<parameter name="P_STOP_TIME" dataType="varchar2"/>
+<parameter name="P_BG_ID" dataType="number"/>
+<parameter name="P_PERSON_TYPE" dataType="varchar2"/>
+<parameter name="P_CUSTOMER_ID" dataType="number"/>
+<parameter name="P_ORG_ID" dataType="number"/> --added by Naveen Yacham on 11-Jun-19 as per Lesa request to add organization parameter
+
+</parameters>
+ <dataQuery>
+<sqlStatement name="Q_MAIN"><![CDATA[
+						SELECT 
+							 -- $Header XXHCC_TIME_ENTRY_DETAILS.xml v1.0 last updated 14-JUN-2019
+  /*****************************************************************************
+  * Filename:       XXHCC_TIME_ENTRY_DETAILS.xml
+  * Version:        1.0
+  * Author:         Naveen Yacham
+  * Creation Date:  14-JUN-2019
+  * Change History:
+  * Who               When           Version  Change (include Bug# if apply)
+  * ----------        -----------    -------  ------------------------------
+  * Naveen Yacham     14-JUN-2019       1.0     Initial Creation
+  * Aswini Srinivasan 25-JUN-2019       2.0     Added comments column
+  * Aswini Srinivasan 02-JUL-2019       3.0     Modified comments column to display in single line
+  * DESCRIPTION:    HCC Timecard Report
+  ****************************************************************************/
+							NVL(ppf.employee_number,ppf.npw_number) EMPLOYEE_NUMBER,
+							       ppf.full_name FULL_NAME ,
+							       hts.approval_status STATUS ,
+							       to_char(hts.start_time,'DD-Mon-YYYY') START_TIME ,
+							       to_char(hts.stop_time,'DD-Mon-YYYY') STOP_TIME ,								   
+							       papa.SEGMENT1 PROJECT_NUMBER ,
+							       papa.long_name PROJECT_NAME,
+							       ppc.customer_number CLIENT_ID ,
+							       ppc.customer_name CLIENT_NAME ,
+							       pt.task_number TASK_NUMBER ,
+								   pt.task_name,   -- added by Naveen Yacham on 11-Jun-19 as per Lesa request to add Task Name column
+							       hta.attribute3 ATTRIBUTE3,
+							       petf.element_name ELEMENT_NAME,
+							       to_char(htb1.start_time,'DD-Mon-YYYY') DAY ,								   								   
+							       htb2.measure HOURS,
+							       hta1.attribute4 WORK_LOCATION,
+							       papa.project_type PROJECT_TYPE,
+							       DECODE(papa.project_type,'Indirect','N','Y') BILLABLE_FLAG,
+							       apps.hr_person_type_usage_info.get_user_person_type(htb1.start_time,ppf.person_id) PERSON_TYPE ,
+							       pbg.name BUSINESS_GROUP,
+							       hts.timecard_id ,
+							       hts.timecard_ovn ,
+							       hts.recorded_hours ,
+							       haou.name NAME,
+								  -- htb2.comment_text              ---Added by Aswini on 25-JUN-19 for INC0495635
+								    REPLACE(htb2.comment_text, chr(13)||chr(10), ' ')comment_text ---Added by Aswini on 02-JUL-19 to display the comments in single line
+								FROM hxc_time_building_blocks htb,
+								  hxc_time_building_blocks htb1,
+								  hxc_time_building_blocks htb2,
+								  hxc_time_attribute_usages htau,
+								  hxc_time_attributes hta,
+								  hxc_time_attribute_usages htau1,
+								  hxc_time_attributes hta1,
+								  pa_projects_all papa,
+								  pa_project_customers_v ppc,
+								  hxc_timecard_summary hts,
+								  per_people_f ppf,
+								  per_assignments_f paf,
+								  per_business_groups pbg,
+								  hr_all_organization_units haou,
+								  pay_element_types_f petf,
+								  pa_tasks pt
+								WHERE htb1.parent_building_block_id = htb.time_building_block_id
+								AND htb1.parent_building_block_ovn  = htb.object_version_number
+								AND htb.date_to                     = hr_general.end_of_time
+								AND htb.SCOPE                       = 'TIMECARD'
+								AND htb1.SCOPE                      = 'DAY'
+								AND htb1.date_to                    = hr_general.end_of_time
+								AND htb2.parent_building_block_id   = htb1.time_building_block_id
+								AND htb2.parent_building_block_ovn  = htb1.object_version_number
+								AND htb2.SCOPE                      = 'DETAIL'
+								AND htb2.date_to                    = hr_general.end_of_time
+								AND htau.time_building_block_id     = htb2.time_building_block_id
+								AND htau.time_building_block_ovn    = htb2.object_version_number
+								AND htau.time_attribute_id          = hta.time_attribute_id
+								AND htau1.time_building_block_id    = htb2.time_building_block_id
+								AND htau1.time_building_block_ovn   = htb2.object_version_number
+								AND htau1.time_attribute_id         = hta1.time_attribute_id
+								AND hta1.attribute_category LIKE 'ELEMENT%'
+								AND papa.project_id       = hta.attribute1
+								AND papa.project_id       = ppc.project_id(+)
+								AND hts.start_time        = htb.start_time
+								AND hts.resource_id       = htb.resource_id
+								AND hts.resource_id       = ppf.person_id
+								AND ppf.person_id         = paf.person_id
+								AND paf.organization_id   =haou.organization_id
+								AND pbg.business_group_id = ppf.business_group_id
+								AND htb1.start_time BETWEEN paf.effective_start_date AND paf.effective_end_date
+								AND htb1.start_time BETWEEN ppf.effective_start_date AND ppf.effective_end_date
+								--AND TO_CHAR(petf.element_type_id) = (SUBSTR(hta1.attribute_category,11,LENGTH(hta1.attribute_category))) -- Commented By Milan on June 27th 2018
+								AND petf.element_type_id =  TO_NUMBER(SUBSTR(hta1.attribute_category
+											 ,INSTR(hta1.attribute_category,'-',1)+2     
+											 ,LENGTH(hta1.attribute_category)))  -- Added  By Milan on June 27th 2018
+								AND hta.attribute_category        = 'PROJECTS'
+								AND hta.attribute2                = pt.task_id
+								AND exists (select 1
+											from dual
+											where pt.customer_id is null
+											union all
+											select 1
+											from dual
+											where pt.customer_id = ppc.customer_id) --Added by Seshu for Thailand issue 04/07/2018
+								AND hta.attribute1                = pt.project_id
+								AND ppf.person_id                 = NVL(:P_EMPLOYEE_NAME,ppf.person_id)
+								AND ppf.person_id                 = NVL(:P_EMPLOYEE_NUM,ppf.person_id)
+								AND hts.approval_status           = NVL(:P_STATUS,hts.approval_status)
+								AND htb1.start_time BETWEEN NVL(to_date(:P_START_TIME,'YYYY/MM/DD HH24:MI:SS'),hts.start_time) AND NVL(to_date(:P_STOP_TIME,'YYYY/MM/DD HH24:MI:SS'),hts.stop_time)
+								  --AND NVL(ppt.user_person_type,'*')  = NVL(:P_PERSON_TYPE,NVL(ppt.user_person_type,'*'))  ----Commented and added below by Rama on 12-Feb-14 as per Harsha's request to display the correct person type
+								AND NVL(hr_person_type_usage_info.get_user_person_type(htb1.start_time,ppf.person_id),'*')=NVL(:P_PERSON_TYPE,NVL(hr_person_type_usage_info.get_user_person_type(htb1.start_time,ppf.person_id),'*'))
+								AND pbg.business_group_id                                                                 = NVL(:P_BG_ID,pbg.business_group_id)
+								AND ( :P_CUSTOMER_ID IS NULL OR ppc.CUSTOMER_ID = :P_CUSTOMER_ID )	
+                                AND haou.organization_id = NVL(:p_org_id,haou.organization_id) -- added by Naveen Yacham on 11-Jun-19 as per Lesa request to add organization parameter															
+]]>
+</sqlStatement>   
+   </dataQuery>
+<dataTrigger/>
+ <dataStructure>  
+<group name="G_HCC_TIME_ENTRY_DTLS" source="Q_MAIN">
+<element name="EMPLOYEE_NUMBER"            dataType="varchar2" value="EMPLOYEE_NUMBER"/>
+<element name="FULL_NAME"         dataType="varchar2" value="FULL_NAME"/>
+<element name="STATUS"                dataType="varchar2" value="STATUS"/>
+<element name="START_TIME"       dataType="varchar2" value="START_TIME"/>
+<element name="STOP_TIME"           dataType="varchar2" value="STOP_TIME"/>
+<element name="PROJECT_NUMBER"           dataType="varchar2" value="PROJECT_NUMBER"/>
+<element name="PROJECT_NAME"   dataType="varchar2" value="PROJECT_NAME"/>
+<element name="CLIENT_ID"   dataType="varchar2" value="CLIENT_ID"/>
+<element name="CLIENT_NAME"   dataType="varchar2" value="CLIENT_NAME"/>
+<element name="ELEMENT_NAME"   dataType="varchar2" value="ELEMENT_NAME"/>
+<element name="TASK_NUMBER"             dataType="varchar2" value="TASK_NUMBER"/>
+<element name="TASK_NAME"             dataType="varchar2" value="TASK_NAME"/>   -- added by Naveen Yacham on 11-Jun-19 as per Lesa request to add Task Name column
+<element name="ATTRIBUTE3"        dataType="varchar2" value="ATTRIBUTE3"/>
+<element name="PROJECT_TYPE"        dataType="varchar2" value="PROJECT_TYPE"/>
+<element name="PERSON_TYPE"        dataType="varchar2" value="PERSON_TYPE"/>
+<element name="BILLABLE_FLAG"        dataType="varchar2" value="BILLABLE_FLAG"/>
+<element name="DAY"         dataType="varchar2" value="DAY"/>
+<element name="HOURS"           dataType="number" value="HOURS"/>
+<element name="WORK_LOCATION"      dataType="varchar2" value="WORK_LOCATION"/>
+<element name="BUSINESS_GROUP"       dataType="varchar2" value="BUSINESS_GROUP"/>
+<element name="RECORDED_HOURS"  dataType="number" value="RECORDED_HOURS"/>
+<element name="NAME"   dataType="varchar2" value="NAME"/>
+<element name="COMMENT_TEXT"   dataType="varchar2" value="COMMENT_TEXT"/>
+	</group>
+  </dataStructure>
+  <dataTrigger/>
+  </dataTemplate>
